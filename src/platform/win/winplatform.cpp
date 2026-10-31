@@ -15,7 +15,6 @@
 #include <QFileInfo>
 #include <QKeyEvent>
 #include <QMetaObject>
-#include <QMessageBox>
 #include <QSettings>
 #include <QStringList>
 #include <QWidget>
@@ -203,7 +202,13 @@ QApplication *createGuiApplication(int &argc, char **argv)
 
     // WORKAROUND: Create a window so that application can receive
     //             WM_QUERYENDSESSION (from installer) and similar events.
+    // The window is never shown but some remote desktop sessions still draw it
+    // as a blank window, so make it frameless, tiny and off-screen.
     auto w = new QWidget();
+    w->setWindowFlags(
+        Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus
+        | Qt::WindowTransparentForInput);
+    w->setGeometry(-32000, -32000, 1, 1);
     auto winId = w->winId();
     Q_UNUSED(winId)
 
@@ -358,20 +363,10 @@ bool WinPlatform::setPreventScreenCapture(WId winId, bool prevent)
         static bool logged = false;
         if (!logged) {
             logged = true;
+            // Don't show a modal dialog here. This runs from the Show event of a
+            // window, and a message box opened from there stays invisible and
+            // blocks the server.
             log("Skipping screen capture prevention in remote desktop session", LogWarning);
-
-            const QLatin1String optionKey("Options/screen_capture_warning_acknowledged");
-            Settings settings;
-            if (!settings.value(optionKey, false).toBool()) {
-                QMessageBox::warning(
-                    nullptr,
-                    QObject::tr("Screen Capture Prevention Unavailable"),
-                    QObject::tr(
-                        "The option to hide from screenshots is enabled but cannot"
-                        " take effect in a remote desktop session. Window content"
-                        " may be visible to screen capture."));
-                settings.setValue(optionKey, true);
-            }
         }
 
         SetWindowDisplayAffinity(window, WDA_NONE);
